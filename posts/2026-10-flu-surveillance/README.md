@@ -39,7 +39,7 @@ ILI baselines (hand-transcribed, with source) are in `data/reference/`.
   53-week season), so that explains little of the gap. **This is worth investigating, not a
   finding**: fewer labs reporting, less testing, or a reporting change would all look the same here.
   The drop is broad: Region 6 fell 20% (553k in 2024-25 to 442k), close to the national 25%, and
-  is not a low for the region (2019-20 to 2021-22 were all lower).
+  is not a low for the region (2019-20 and 2020-21 were lower).
 - Region 6 (AR, LA, NM, OK, TX) is moving the other way on outpatient reporting: a median of 227
   ILINet providers per week in 2025-26, its lowest in the seven seasons (279.5 in 2019-20). The decline
   is gradual (250.5, 254.5, 247.5, then 227 from 2022-23 to 2025-26), with most of it in the last
