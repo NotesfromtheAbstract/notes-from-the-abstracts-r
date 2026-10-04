@@ -133,6 +133,22 @@ first_release <- revisions_long |>
   rename(first_value = value, first_lag = lag, first_issue = issue)
 write_csv(first_release, "data/revisions_first_vs_latest.csv")
 
+# 5a. Revision summary for 2025-26 (national): absolute and relative size, direction.
+rev_summary <- first_release |>
+  filter(region == "National", season == "2025-26") |>
+  group_by(metric) |>
+  summarise(weeks = n(),
+            median_abs_revision_pts = median(abs(revision)),
+            max_abs_revision_pts = max(abs(revision)),
+            median_relative_revision = median(abs(revision) / latest),
+            aggregate_relative_revision = sum(abs(revision)) / sum(latest),
+            share_revised_up = mean(revision > 0),
+            share_revised_down = mean(revision < 0),
+            weeks_unrevised = sum(revision == 0),
+            .groups = "drop")
+write_csv(rev_summary, "data/revision_summary_2025_26.csv")
+print(rev_summary)
+
 # 5b. Release calendar: every weekly FluView issue Delphi archived (from the lag 0-4
 # pulls), with its release date. Gaps between consecutive releases show interruptions.
 releases <- map_dfr(lags, \(l) read_delphi(sprintf("fluview_lag%d.json", l))) |>

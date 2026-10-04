@@ -14,6 +14,9 @@ flow     <- rd("data_flow_by_season.csv")
 first    <- rd("revisions_first_vs_latest.csv")
 revlag   <- rd("revisions_by_lag.csv")
 regional <- rd("regional_2025_26_vs_own_baseline.csv")
+revsum   <- rd("revision_summary_2025_26.csv")
+baselines <- read_csv("data/reference/cdc_ili_baselines_2025_26.csv", show_col_types = FALSE)
+src_base <- "2025-26 ILI baselines: CDC, cdc.gov/fluview/overview/index.html"
 
 latest <- max(ili$epiweek)
 latest_lbl <- sprintf("MMWR %d week %d", latest %/% 100, latest %% 100)
@@ -105,9 +108,13 @@ p3 <- ggplot(rev25, aes(week_end, revision, fill = direction)) +
   scale_fill_manual(values = c("Revised up" = nc[["primary"]], "Revised down" = nc[["secondary"]]), name = NULL) +
   scale_y_continuous(labels = \(x) sprintf("%+.2f", x), expand = expansion(mult = c(0.1, 0.35))) +
   scale_x_date(date_breaks = "1 month", date_labels = "%b\n%Y") +
-  labs(x = "Week ending", y = "Latest minus first-published value (percentage points)",
+  labs(x = "Week ending", y = "Latest minus first release (pct. points)",
        title = "First release vs. today: how much 2025-26 numbers moved",
-       subtitle = "National, each week of 2025-26. First release = earliest archived Delphi issue for that week (lag 0 where available, else lag 1-4).\nMMWR 2025 weeks 39-40 have no archived release within 4 weeks (see the release-gap chart) and are not shown.",
+       subtitle = with(revsum, sprintf(paste0(
+         "National, 2025-26. First release = earliest archived Delphi issue (lag 0 where available, else lag 1-4).\n2025 weeks 39-40 are not shown (no release within 4 weeks; see fig. 10). ",
+         "wILI was revised up in %s of weeks\n(median relative change %s); clinical %% positive was revised down in %s of weeks (median relative change %s)."),
+         percent(share_revised_up[metric == "Weighted %ILI"], 1), percent(median_relative_revision[metric == "Weighted %ILI"], 0.1),
+         percent(share_revised_down[metric == "Clinical % positive"], 1), percent(median_relative_revision[metric == "Clinical % positive"], 0.1))),
        caption = cap(paste0(src_ili, ";\n", src_clin))) +
   theme_blog()
 save_png(p3, "03_revisions_first_vs_latest_2025_26.png")
@@ -133,9 +140,17 @@ p4 <- ggplot(rev_lag, aes(lag, abs_rev)) +
 save_png(p4, "04_revisions_by_lag.png")
 
 # 5/6. Season overlays (2022-23 onward), National and Region 6 ----------------------
-overlay <- function(df, y, ylab, title, src) {
+overlay <- function(df, y, ylab, title, src, show_baseline = FALSE) {
+  bl <- baselines |> filter(region %in% two_regions) |>
+    mutate(label = sprintf("CDC 2025-26 baseline %.1f%%", baseline_wili))
   ggplot(df |> filter(region %in% two_regions, season %in% c(baseline, focus)),
          aes(season_week, {{ y }}, colour = season, linewidth = season, group = season)) +
+    { if (show_baseline) list(
+        geom_hline(data = bl, aes(yintercept = baseline_wili),
+                   colour = nc[["muted_foreground"]], linetype = "22", linewidth = 0.5),
+        geom_text(data = bl, aes(x = 52, y = baseline_wili, label = label), inherit.aes = FALSE,
+                  hjust = 1, vjust = -0.5, size = 3, family = nfta_fonts[["body"]],
+                  colour = nc[["muted_foreground"]])) } +
     geom_line() +
     facet_wrap(~region, labeller = as_labeller(region_lab)) +
     scale_colour_manual(values = pal_season, name = "Season") +
@@ -145,12 +160,12 @@ overlay <- function(df, y, ylab, title, src) {
     labs(x = xlab_season, y = ylab, title = title,
          subtitle = paste0("2025-26 (red) vs. the three prior seasons. Earlier seasons are left out: ILINet's ILI ",
                            "definition changed in week 40 of 2021,\nand 2020-21/2021-22 were distorted by COVID-19."),
-         caption = cap(src)) +
+         caption = cap(src, if (show_baseline) paste0(src_base, ". Each panel uses its own baseline; CDC: the national baseline should not be applied to regional data.") else NULL)) +
     theme_blog() +
     guides(colour = guide_legend(override.aes = list(linewidth = 1.3)))
 }
 save_png(overlay(ili, wili, "Weighted %ILI",
-                 "Outpatient influenza-like illness: 2025-26 vs. recent seasons", src_ili),
+                 "Outpatient influenza-like illness: 2025-26 vs. recent seasons", src_ili, show_baseline = TRUE),
          "05_wili_season_overlay_national_region6.png")
 save_png(overlay(clin, pct_positive, "% of specimens positive",
                  "Clinical lab flu test positivity: 2025-26 vs. recent seasons", src_clin),
@@ -168,6 +183,11 @@ reg_long <- bind_rows(
 p7 <- ggplot(reg_long, aes(y = region)) +
   geom_linerange(aes(xmin = lo, xmax = hi), linewidth = 4, colour = nc[["tertiary"]]) +
   geom_point(aes(x = val, colour = above), size = 3) +
+  geom_point(data = baselines |> mutate(metric = "Peak weighted %ILI",
+                                        region = factor(region, levels(reg_long$region))),
+             aes(x = baseline_wili, shape = "CDC 2025-26 ILI baseline"),
+             colour = nc[["muted_foreground"]], size = 3) +
+  scale_shape_manual(values = c("CDC 2025-26 ILI baseline" = 124), name = NULL) +
   facet_wrap(~metric, scales = "free_x") +
   scale_colour_manual(values = c(`TRUE` = nc[["primary"]], `FALSE` = nc[["foreground"]]),
                       labels = c(`TRUE` = "2025-26 peak above prior range", `FALSE` = "2025-26 peak within/below range"),
@@ -176,7 +196,7 @@ p7 <- ggplot(reg_long, aes(y = region)) +
   labs(x = NULL, y = NULL,
        title = "Each region against its own history",
        subtitle = "Dot = 2025-26 season peak. Bar = range of peaks in 2022-23, 2023-24 and 2024-25 for the same region.",
-       caption = cap(paste0(src_ili, ";\n", src_clin))) +
+       caption = cap(paste0(src_ili, ";\n", src_clin), src_base)) +
   theme_blog()
 save_png(p7, "07_regions_vs_own_baseline.png")
 
@@ -189,7 +209,15 @@ recent <- bind_rows(
   mutate(region = factor(recode(region, !!!region_lab), unname(region_lab)),
          metric = factor(metric, c("Weighted %ILI", "Clinical % positive")))
 shade_from <- max(recent$week_end) - 7 * 3 + 0.5
+bl8 <- baselines |> filter(region %in% two_regions) |>
+  mutate(region = factor(recode(region, !!!region_lab), unname(region_lab)),
+         metric = factor("Weighted %ILI", levels(recent$metric)))
 p8 <- ggplot(recent, aes(week_end, value, colour = region)) +
+  geom_hline(data = bl8, aes(yintercept = baseline_wili, colour = region), linetype = "22",
+             linewidth = 0.5, show.legend = FALSE) +
+  geom_text(data = bl8, aes(x = min(recent$week_end), y = baseline_wili,
+                            label = sprintf("%s 2025-26 baseline %.1f%%", if_else(str_detect(region, "Region"), "Region 6", "National"), baseline_wili)),
+            hjust = 0, vjust = -0.5, size = 3, family = nfta_fonts[["body"]], show.legend = FALSE) +
   annotate("rect", xmin = shade_from, xmax = max(recent$week_end) + 3.5, ymin = -Inf, ymax = Inf,
            fill = nc[["muted"]], alpha = 1) +
   geom_line(linewidth = 1) + geom_point(size = 1.5) +
@@ -199,9 +227,11 @@ p8 <- ggplot(recent, aes(week_end, value, colour = region)) +
   scale_x_date(date_breaks = "1 month", date_labels = "%b %d") +
   labs(x = "Week ending", y = NULL,
        title = "Heading into 2026-27: the latest weeks",
-       subtitle = paste0("Last 20 published weeks. Shaded = most recent 3 weeks, preliminary and likely to be revised.\n",
-                         "No 2026-27 season weeks (MMWR week 40+) were published as of the pull date."),
-       caption = cap(paste0(src_ili, ";\n", src_clin))) +
+       subtitle = with(clin |> filter(region == "National", epiweek == max(epiweek)), sprintf(paste0(
+         "Last 20 published weeks. Shaded = most recent 3 weeks, preliminary.\nThe latest week is a first release: national positivity %.1f%% from %s specimens (first releases for week 38 in 2023-2025 had 43-47k).\n",
+         "No 2026-27 weeks (MMWR week 40+) were published as of the pull date."),
+         pct_positive, comma(total_specimens))),
+       caption = cap(paste0(src_ili, ";\n", src_clin), src_base)) +
   theme_blog()
 save_png(p8, "08_latest_weeks_preliminary.png")
 
@@ -233,7 +263,8 @@ p9 <- ggplot(phl_mix, aes(season, share, fill = virus)) +
                        sprintf(paste0("National share of influenza-positive specimens tested by public health labs. Descriptive only: PHL testing is not a random sample.\n",
                                       "%s: of subtyped influenza A, %s were A(H3N2) and %s A(H1N1)pdm09."),
                                focus, percent(share_h3_of_subtyped_a, 1), percent(share_h1_of_subtyped_a, 1))),
-       caption = cap(src_phl)) +
+       caption = cap(src_phl, paste0("Not a random sample: PHLs often receive specimens already positive at clinical labs. Separately, CDC's 2025-26 'Right Size' guidance asks each PHL to send CDC,\n",
+                                      "every other week, up to 4 A(H1N1)pdm09, 6 A(H3N2) and 4 B specimens for characterization (cdc.gov/fluview/overview); that limits CDC's genetic data, not the PHL counts shown here."))) +
   theme_blog() + guides(fill = guide_legend(nrow = 2))
 save_png(p9, "09_public_health_lab_subtypes.png")
 
@@ -255,7 +286,7 @@ p10 <- ggplot(rel, aes(release_date, days_since_prev)) +
   scale_x_date(date_breaks = "6 months", date_labels = "%b\n%Y") +
   labs(x = "Release date", y = "Days since previous release",
        title = "Is the data still flowing? One long break in weekly releases",
-       subtitle = "Each spike = one weekly ILINet/FluView issue as archived by Delphi; height = days since the previous issue (dashed line = 7 days).\nDates are when Delphi ingested each release, so they can trail CDC publication by a day or more.",
+       subtitle = "Each spike = one weekly ILINet/FluView issue as archived by Delphi; height = days since the previous issue (dashed line = 7 days).\nDates are when Delphi ingested each release and can trail CDC publication.\nThe long gap spans the Oct 1-Nov 12, 2025 federal funding lapse (CRS R48832).",
        caption = cap(src_ili, "Release dates from Delphi's issue archive (lag 0-4 pulls), MMWR 2022 week 40 onward.")) +
   theme_blog()
 save_png(p10, "10_fluview_release_gaps.png")
