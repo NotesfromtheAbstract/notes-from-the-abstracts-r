@@ -133,6 +133,19 @@ first_release <- revisions_long |>
   rename(first_value = value, first_lag = lag, first_issue = issue)
 write_csv(first_release, "data/revisions_first_vs_latest.csv")
 
+# 5b. Release calendar: every weekly FluView issue Delphi archived (from the lag 0-4
+# pulls), with its release date. Gaps between consecutive releases show interruptions.
+releases <- map_dfr(lags, \(l) read_delphi(sprintf("fluview_lag%d.json", l))) |>
+  filter(region == "National") |>
+  distinct(issue, release_date) |>
+  group_by(issue) |> summarise(release_date = min(release_date), .groups = "drop") |>
+  arrange(issue) |>
+  mutate(days_since_prev = as.integer(release_date - lag(release_date)))
+write_csv(releases, "data/fluview_release_calendar.csv")
+message("Longest gap between ILINet releases: ", max(releases$days_since_prev, na.rm = TRUE), " days, ending ",
+        releases$release_date[which.max(releases$days_since_prev)], " (issue ",
+        releases$issue[which.max(releases$days_since_prev)], ")")
+
 # 6. Season peaks and regional comparison against each region's own baseline ------
 peaks <- ili |>
   group_by(region, season, comparable_baseline) |>

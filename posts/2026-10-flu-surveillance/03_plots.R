@@ -107,7 +107,7 @@ p3 <- ggplot(rev25, aes(week_end, revision, fill = direction)) +
   scale_x_date(date_breaks = "1 month", date_labels = "%b\n%Y") +
   labs(x = "Week ending", y = "Latest minus first-published value (percentage points)",
        title = "First release vs. today: how much 2025-26 numbers moved",
-       subtitle = "National, each week of 2025-26. First release = earliest archived Delphi issue for that week (lag 0 where available, else lag 1-4).",
+       subtitle = "National, each week of 2025-26. First release = earliest archived Delphi issue for that week (lag 0 where available, else lag 1-4).\nMMWR 2025 weeks 39-40 have no archived release within 4 weeks (see the release-gap chart) and are not shown.",
        caption = cap(paste0(src_ili, ";\n", src_clin))) +
   theme_blog()
 save_png(p3, "03_revisions_first_vs_latest_2025_26.png")
@@ -236,3 +236,26 @@ p9 <- ggplot(phl_mix, aes(season, share, fill = virus)) +
        caption = cap(src_phl)) +
   theme_blog() + guides(fill = guide_legend(nrow = 2))
 save_png(p9, "09_public_health_lab_subtypes.png")
+
+# 10. Release calendar: was FluView published every week? -----------------------
+rel <- rd("fluview_release_calendar.csv") |> filter(!is.na(days_since_prev))
+gap <- rel |> slice_max(days_since_prev, n = 1)
+p10 <- ggplot(rel, aes(release_date, days_since_prev)) +
+  geom_hline(yintercept = 7, colour = nc[["muted_foreground"]], linetype = "22") +
+  geom_segment(aes(xend = release_date, y = 0, yend = days_since_prev),
+               colour = if_else(rel$days_since_prev > 14, nc[["primary"]], nc[["secondary"]]), linewidth = 0.7) +
+  geom_point(aes(colour = days_since_prev > 14), size = 1.6) +
+  annotate("text", x = gap$release_date, y = gap$days_since_prev, hjust = 1.05, vjust = 0.4,
+           family = nfta_fonts[["body"]], size = 3.3, colour = nc[["foreground"]],
+           label = sprintf("%d days with no new release,\nending %s (MMWR %d-%02d issue)",
+                           gap$days_since_prev, format(gap$release_date, "%b %d, %Y"),
+                           gap$issue %/% 100, gap$issue %% 100)) +
+  scale_colour_manual(values = c(`TRUE` = nc[["primary"]], `FALSE` = nc[["secondary"]]), guide = "none") +
+  scale_y_continuous(breaks = c(0, 7, 14, 28, 42, 49), expand = expansion(mult = c(0, 0.08))) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b\n%Y") +
+  labs(x = "Release date", y = "Days since previous release",
+       title = "Is the data still flowing? One long break in weekly releases",
+       subtitle = "Each spike = one weekly ILINet/FluView issue as archived by Delphi; height = days since the previous issue (dashed line = 7 days).\nDates are when Delphi ingested each release, so they can trail CDC publication by a day or more.",
+       caption = cap(src_ili, "Release dates from Delphi's issue archive (lag 0-4 pulls), MMWR 2022 week 40 onward.")) +
+  theme_blog()
+save_png(p10, "10_fluview_release_gaps.png")
