@@ -41,7 +41,9 @@ xlab_season <- "Season week (week 1 = MMWR week 40); month labels approximate"
 
 baseline <- c("2022-23", "2023-24", "2024-25")
 focus    <- "2025-26"
-pal_season <- c("2022-23" = "#9ecae1", "2023-24" = "#4292c6", "2024-25" = "#08519c", "2025-26" = "#e6550d")
+nc <- nfta_colors  # brand palette from ../../R/theme_blog.R
+pal_season <- c("2022-23" = nc[["tertiary"]], "2023-24" = nc[["secondary"]],
+                "2024-25" = nc[["foreground"]], "2025-26" = nc[["primary"]])
 lw_season  <- c("2022-23" = 0.7, "2023-24" = 0.7, "2024-25" = 0.7, "2025-26" = 1.4)
 two_regions <- c("National", "Region 6")
 region_lab  <- c("National" = "National", "Region 6" = "HHS Region 6 (AR, LA, NM, OK, TX)")
@@ -53,12 +55,13 @@ flow_nat <- flow |>
             `Median ILINet providers reporting per week` = median_providers,
             `Clinical lab specimens tested per season (millions)` = clinical_specimens / 1e6) |>
   pivot_longer(-c(season, season_complete, last_epiweek)) |>
+  mutate(name = fct_inorder(name)) |>
   mutate(label = if_else(str_detect(name, "millions"), sprintf("%.2fM", value), comma(value, 1)))
 p1 <- ggplot(flow_nat, aes(season, value, fill = season == focus)) +
   geom_col(width = 0.7) +
-  geom_text(aes(label = label), vjust = -0.4, size = 3.3) +
+  geom_text(aes(label = label), vjust = -0.4, size = 3.3, family = nfta_fonts[["body"]], colour = nc[["foreground"]]) +
   facet_wrap(~name, scales = "free_y") +
-  scale_fill_manual(values = c(`TRUE` = "#e6550d", `FALSE` = "#6baed6"), guide = "none") +
+  scale_fill_manual(values = c(`TRUE` = nc[["primary"]], `FALSE` = nc[["secondary"]]), guide = "none") +
   scale_y_continuous(expand = expansion(mult = c(0, 0.12)), labels = comma) +
   labs(x = NULL, y = NULL,
        title = "Is the data still flowing? More ILINet providers, fewer lab specimens",
@@ -74,49 +77,56 @@ prov_reg <- flow |>
 p2 <- ggplot(prov_reg, aes(season, fct_rev(region), fill = median_providers)) +
   geom_tile(colour = "white") +
   geom_text(aes(label = comma(median_providers, 1),
-                colour = median_providers > quantile(median_providers, 0.7)), size = 3.2) +
-  scale_colour_manual(values = c(`TRUE` = "white", `FALSE` = "grey15"), guide = "none") +
-  scale_fill_distiller(palette = "Blues", direction = 1, name = "Median providers/week", labels = comma) +
+                colour = median_providers > 600),
+            size = 3.2, family = nfta_fonts[["body"]]) +
+  scale_colour_manual(values = c(`TRUE` = nc[["background"]], `FALSE` = nc[["foreground"]]), guide = "none") +
+  scale_fill_nfta_c(name = "Median providers/week", labels = comma) +
   labs(x = NULL, y = NULL,
        title = "ILINet reporting depth varies a lot by HHS region",
        subtitle = "Median number of ILINet providers reporting per week, by HHS region and season",
        caption = cap(src_ili, "Region 6 = AR, LA, NM, OK, TX. Provider counts reflect the latest release; late reports keep arriving for recent weeks.")) +
-  theme_blog() + theme(panel.grid = element_blank(), legend.key.width = unit(1.5, "cm"))
+  theme_blog() + theme(panel.grid = element_blank(), legend.key.width = unit(1.5, "cm"), legend.title = element_text(vjust = 0.8))
 save_png(p2, "02_providers_by_hhs_region.png")
 
 # 3. Revisions: first release vs latest, 2025-26, national --------------------------
 rev25 <- first |>
   filter(region == "National", season == focus) |>
-  select(metric, week_end, `First release` = first_value, `Latest release` = latest) |>
-  pivot_longer(c(`First release`, `Latest release`), names_to = "release")
-p3 <- ggplot(rev25, aes(week_end, value, colour = release, linetype = release)) +
-  geom_line(linewidth = 0.9) +
-  facet_wrap(~metric, scales = "free_y") +
-  scale_colour_manual(values = c("First release" = "grey45", "Latest release" = "#e6550d"), name = NULL) +
-  scale_linetype_manual(values = c("First release" = "22", "Latest release" = "solid"), name = NULL) +
-  scale_y_continuous(labels = label_percent(scale = 1), limits = c(0, NA)) +
-  scale_x_date(date_breaks = "2 months", date_labels = "%b\n%Y") +
-  labs(x = "Week ending", y = NULL,
+  mutate(direction = if_else(revision >= 0, "Revised up", "Revised down"))
+rev25_lab <- rev25 |> group_by(metric) |>
+  summarise(lab = sprintf("Median |revision| %.2f pts; largest %+.2f pts (week ending %s)",
+                          median(abs(revision)), revision[which.max(abs(revision))],
+                          format(week_end[which.max(abs(revision))], "%b %d, %Y")), .groups = "drop")
+p3 <- ggplot(rev25, aes(week_end, revision, fill = direction)) +
+  geom_hline(yintercept = 0, colour = nc[["foreground"]], linewidth = 0.4) +
+  geom_col(width = 6) +
+  geom_text(data = rev25_lab, aes(x = min(rev25$week_end), y = Inf, label = lab), inherit.aes = FALSE,
+            hjust = 0, vjust = 1.3, size = 3.1, family = nfta_fonts[["body"]], colour = nc[["muted_foreground"]]) +
+  facet_wrap(~metric, scales = "free_y", ncol = 1) +
+  scale_fill_manual(values = c("Revised up" = nc[["primary"]], "Revised down" = nc[["secondary"]]), name = NULL) +
+  scale_y_continuous(labels = \(x) sprintf("%+.2f", x), expand = expansion(mult = c(0.1, 0.35))) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b\n%Y") +
+  labs(x = "Week ending", y = "Latest minus first-published value (percentage points)",
        title = "First release vs. today: how much 2025-26 numbers moved",
-       subtitle = "National. 'First release' = earliest archived issue for each week (lag 0 where available, else lag 1-4).",
+       subtitle = "National, each week of 2025-26. First release = earliest archived Delphi issue for that week (lag 0 where available, else lag 1-4).",
        caption = cap(paste0(src_ili, ";\n", src_clin))) +
   theme_blog()
 save_png(p3, "03_revisions_first_vs_latest_2025_26.png")
 
 # 4. Revisions by lag: absolute change from each early release to latest -----------
 rev_lag <- revlag |>
-  filter(region == "National", epiweek < latest - 4) |>   # skip weeks too new to have settled
+  filter(region == "National", epiweek < .env$latest - 4) |>   # skip weeks too new to have settled
   mutate(lag = factor(lag), abs_rev = abs(revision))
 rev_lag_sum <- rev_lag |> group_by(metric, lag) |>
   summarise(med = median(abs_rev), p90 = quantile(abs_rev, 0.9), n = n(), .groups = "drop")
 p4 <- ggplot(rev_lag, aes(lag, abs_rev)) +
-  geom_boxplot(outlier.alpha = 0.4, fill = "#c6dbef", colour = "#08519c", width = 0.6) +
-  geom_text(data = rev_lag_sum, aes(y = p90, label = sprintf("median %.2f pts", med)),
-            vjust = -1.2, size = 3.1, colour = "grey25") +
+  geom_boxplot(outlier.alpha = 0.4, outlier.colour = nc[["muted_foreground"]], fill = nc[["tertiary"]], colour = nc[["foreground"]], width = 0.6) +
+  geom_text(data = rev_lag_sum, aes(y = Inf, label = sprintf("median\n%.2f", med)),
+            vjust = 1.2, size = 3, lineheight = 0.9, colour = nc[["muted_foreground"]], family = nfta_fonts[["body"]]) +
   facet_wrap(~metric, scales = "free_y") +
+  scale_y_continuous(expand = expansion(mult = c(0.02, 0.18))) +
   labs(x = "Weeks after the data week when the value was published (lag)",
        y = "Absolute change to latest value (percentage points)",
-       title = "Recent weeks get revised, and the newest week moves the most",
+       title = "Recent weeks get revised; first-release lab positivity moves the most",
        subtitle = "National, MMWR 2022 week 40 onward. Each box: |latest value - value published at that lag| across weeks.",
        caption = cap(paste0(src_ili, ";\n", src_clin))) +
   theme_blog()
@@ -133,7 +143,7 @@ overlay <- function(df, y, ylab, title, src) {
     scale_y_continuous(labels = label_percent(scale = 1), limits = c(0, NA)) +
     x_season +
     labs(x = xlab_season, y = ylab, title = title,
-         subtitle = paste0("2025-26 (orange) vs. the three prior seasons. Earlier seasons are left out: ILINet's ILI ",
+         subtitle = paste0("2025-26 (red) vs. the three prior seasons. Earlier seasons are left out: ILINet's ILI ",
                            "definition changed in week 40 of 2021,\nand 2020-21/2021-22 were distorted by COVID-19."),
          caption = cap(src)) +
     theme_blog() +
@@ -156,10 +166,10 @@ reg_long <- bind_rows(
   mutate(region = factor(region, rev(c("National", paste("Region", 1:10)))),
          above = val > hi)
 p7 <- ggplot(reg_long, aes(y = region)) +
-  geom_linerange(aes(xmin = lo, xmax = hi), linewidth = 4, colour = "#c6dbef") +
+  geom_linerange(aes(xmin = lo, xmax = hi), linewidth = 4, colour = nc[["tertiary"]]) +
   geom_point(aes(x = val, colour = above), size = 3) +
   facet_wrap(~metric, scales = "free_x") +
-  scale_colour_manual(values = c(`TRUE` = "#e6550d", `FALSE` = "#08519c"),
+  scale_colour_manual(values = c(`TRUE` = nc[["primary"]], `FALSE` = nc[["foreground"]]),
                       labels = c(`TRUE` = "2025-26 peak above prior range", `FALSE` = "2025-26 peak within/below range"),
                       name = NULL) +
   scale_x_continuous(labels = label_percent(scale = 1)) +
@@ -176,20 +186,20 @@ recent <- bind_rows(
   clin |> transmute(region, week_end, epiweek, metric = "Clinical % positive", value = pct_positive)
 ) |>
   filter(region %in% two_regions, week_end > max(week_end) - 7 * 20) |>
-  mutate(region = recode(region, !!!region_lab),
+  mutate(region = factor(recode(region, !!!region_lab), unname(region_lab)),
          metric = factor(metric, c("Weighted %ILI", "Clinical % positive")))
 shade_from <- max(recent$week_end) - 7 * 3 + 0.5
 p8 <- ggplot(recent, aes(week_end, value, colour = region)) +
   annotate("rect", xmin = shade_from, xmax = max(recent$week_end) + 3.5, ymin = -Inf, ymax = Inf,
-           fill = "grey85", alpha = 0.6) +
+           fill = nc[["muted"]], alpha = 1) +
   geom_line(linewidth = 1) + geom_point(size = 1.5) +
   facet_wrap(~metric, scales = "free_y") +
-  scale_colour_manual(values = c("#08519c", "#e6550d"), name = NULL) +
+  scale_colour_manual(values = c(nc[["secondary"]], nc[["primary"]]), name = NULL) +
   scale_y_continuous(labels = label_percent(scale = 1), limits = c(0, NA)) +
   scale_x_date(date_breaks = "1 month", date_labels = "%b %d") +
   labs(x = "Week ending", y = NULL,
        title = "Heading into 2026-27: the latest weeks",
-       subtitle = paste0("Last 20 published weeks. Shaded = most recent 3 weeks, preliminary and likely to be revised. ",
+       subtitle = paste0("Last 20 published weeks. Shaded = most recent 3 weeks, preliminary and likely to be revised.\n",
                          "No 2026-27 season weeks (MMWR week 40+) were published as of the pull date."),
        caption = cap(paste0(src_ili, ";\n", src_clin))) +
   theme_blog()
@@ -210,15 +220,19 @@ phl_mix <- phl |>
 p9 <- ggplot(phl_mix, aes(season, share, fill = virus)) +
   geom_col(width = 0.75) +
   geom_text(aes(label = if_else(share >= 0.06, percent(share, 1), "")),
-            position = position_stack(vjust = 0.5), size = 3, colour = "white") +
-  scale_fill_manual(values = c("A(H1N1)pdm09" = "#08519c", "A(H3N2)" = "#e6550d", "A(H3N2)v" = "#fdae6b",
-                               "A(H5)" = "#a50f15", "A, not subtyped" = "#969696",
-                               "B/Victoria" = "#31a354", "B/Yamagata" = "#a1d99b",
-                               "B, lineage not determined" = "#c7e9c0"), name = NULL) +
+            position = position_stack(vjust = 0.5), size = 3, colour = nc[["background"]], family = nfta_fonts[["body"]]) +
+  scale_fill_manual(values = c("A(H1N1)pdm09" = nc[["secondary"]], "A(H3N2)" = nc[["primary"]],
+                               "A(H3N2)v" = nc[["accent"]], "A(H5)" = nc[["destructive"]],
+                               "A, not subtyped" = nc[["muted_foreground"]],
+                               "B/Victoria" = nc[["success"]], "B/Yamagata" = nc[["chart_5"]],
+                               "B, lineage not determined" = nc[["tertiary"]]), name = NULL) +
   scale_y_continuous(labels = percent, expand = expansion(mult = c(0, 0.02))) +
   labs(x = NULL, y = "Share of positive specimens",
        title = "Which flu viruses public health labs found, by season",
-       subtitle = "National share of influenza-positive specimens tested by public health labs. Descriptive only: PHL testing is not a random sample.",
+       subtitle = with(filter(phl, region == "National", season == focus),
+                       sprintf(paste0("National share of influenza-positive specimens tested by public health labs. Descriptive only: PHL testing is not a random sample.\n",
+                                      "%s: of subtyped influenza A, %s were A(H3N2) and %s A(H1N1)pdm09."),
+                               focus, percent(share_h3_of_subtyped_a, 1), percent(share_h1_of_subtyped_a, 1))),
        caption = cap(src_phl)) +
   theme_blog() + guides(fill = guide_legend(nrow = 2))
 save_png(p9, "09_public_health_lab_subtypes.png")
