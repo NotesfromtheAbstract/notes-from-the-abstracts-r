@@ -60,7 +60,7 @@ cross-check of the clinical-lab numbers. Raw API responses are cached in `data/r
   7.84% peaks of 2022-23 to 2024-25. Clinical positivity peaked at 31.7% the same week, essentially
   tied with 2024-25 (31.6%).
 - Against their own history, 2025-26 ILI peaks were above the 2022-25 range in Regions 1, 2 and 7
-  (Region 2: 13.6% vs a prior max of 9.2%) and below it in Regions 9 and 10. Region 6 peaked at
+  (Region 2: 13.6% vs a prior max of 9.2%) and below it only in Region 9 (5.81% vs a prior min of 7.29%). Region 6 peaked at
   8.87% wILI (inside its 8.29-10.27% range) and 38.1% positivity (just above its prior max, 37.3%).
 - Public health labs: of subtyped influenza A in 2025-26, 84% was A(H3N2) and 16% A(H1N1)pdm09,
   after two seasons where H1N1pdm09 was the larger share (64% in 2023-24, 53% in 2024-25).
